@@ -32,15 +32,21 @@ export default function Index() {
       switch (role) {
         case 'master_admin':
         case 'admin':
+          // Admin users go to admin section
+          router.replace('/(admin)/home');
+          break;
         case 'master_teacher':
         case 'teacher':
         case 'campus':
+          // Teachers go to teacher section
           router.replace('/(teacher)/home');
           break;
         case 'parent':
+          // Parents go to parent section
           router.replace('/(parent)/home');
           break;
         default:
+          // Unknown role, redirect to login
           router.replace('/auth/login');
       }
     } catch (error) {

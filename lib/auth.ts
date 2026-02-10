@@ -12,7 +12,21 @@ export type UserRole =
 
 export async function getUserRole(user: User): Promise<UserRole> {
   try {
-    // Check if user is a teacher/admin
+    // ✅ 1. Admin Check (profiles table)
+    // admin / master_admin are in 'profiles' table (no role column needed, just existence)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (profile) {
+      console.log('👨‍💼 [Auth] Admin detected (in profiles table)');
+      return 'admin';
+    }
+
+    // ✅ 2. Teacher Check (teachers table)
+    // teacher / master_teacher are in 'teachers' table
     const { data: teacher } = await supabase
       .from('teachers')
       .select('role')
@@ -20,10 +34,12 @@ export async function getUserRole(user: User): Promise<UserRole> {
       .maybeSingle();
 
     if (teacher?.role) {
+      console.log('👨‍🏫 [Auth] Teacher detected. Role:', teacher.role);
       return teacher.role as UserRole;
     }
 
-    // Check if user has students (is a parent)
+    // ✅ 3. Parent Check (students table)
+    // Check if user has students enrolled
     const { data: students } = await supabase
       .from('students')
       .select('id')
@@ -31,9 +47,11 @@ export async function getUserRole(user: User): Promise<UserRole> {
       .limit(1);
 
     if (students && students.length > 0) {
+      console.log('👨‍👩‍👧 [Auth] Parent detected (has students)');
       return 'parent';
     }
 
+    console.log('❓ [Auth] No role found for user');
     return 'unknown';
   } catch (error) {
     console.error('Error getting user role:', error);
