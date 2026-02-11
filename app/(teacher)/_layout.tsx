@@ -11,6 +11,8 @@ export default function TeacherLayout() {
           backgroundColor: '#FFFFFF',
           borderTopWidth: 1,
           borderTopColor: '#E2E8F0',
+          paddingBottom: 4,
+          height: 56,
         },
         headerStyle: {
           backgroundColor: '#0066CC',
@@ -24,48 +26,39 @@ export default function TeacherLayout() {
       <Tabs.Screen
         name="home"
         options={{
-          title: 'Home',
+          title: 'Today',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home" size={size} color={color} />
+            <Ionicons name="today" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="students"
+        name="coach"
         options={{
-          title: 'Students',
+          title: 'Coach',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people" size={size} color={color} />
+            <Ionicons name="create" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="attendance"
+        name="settings"
         options={{
-          title: 'Attendance',
+          title: 'Settings',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="checkmark-circle" size={size} color={color} />
+            <Ionicons name="settings-outline" size={size} color={color} />
           ),
         }}
       />
-      <Tabs.Screen
-        name="messages"
-        options={{
-          title: 'Messages',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubbles" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={size} color={color} />
-          ),
-        }}
-      />
+      {/* Hide removed screens from tabs */}
+      <Tabs.Screen name="students" options={{ href: null }} />
+      <Tabs.Screen name="attendance" options={{ href: null }} />
+      <Tabs.Screen name="messages" options={{ href: null }} />
+      <Tabs.Screen name="profile" options={{ href: null }} />
+      <Tabs.Screen name="classes" options={{ href: null }} />
+      <Tabs.Screen name="send-commitments" options={{ href: null }} />
+      <Tabs.Screen name="student" options={{ href: null }} />
+      <Tabs.Screen name="message" options={{ href: null }} />
     </Tabs>
   );
 }

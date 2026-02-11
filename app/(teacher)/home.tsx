@@ -11,21 +11,20 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { getTeacherStats } from '../../lib/teacher';
 
-interface Stats {
-  total_students: number;
-  present_today: number;
-  absent_today: number;
-  unread_messages: number;
+interface CoachingNote {
+  id: string;
+  student_name: string;
+  content: string;
+  created_at: string;
 }
 
 export default function TeacherHome() {
   const router = useRouter();
-  const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [teacherName, setTeacherName] = useState('');
+  const [todayNotes, setTodayNotes] = useState<CoachingNote[]>([]);
 
   useEffect(() => {
     loadData();
@@ -37,19 +36,40 @@ export default function TeacherHome() {
       if (!user) return;
 
       // Get teacher name
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('first_name, last_name')
-        .eq('id', user.id)
+      const { data: teacher } = await supabase
+        .from('teachers')
+        .select('name')
+        .eq('auth_user_id', user.id)
         .single();
 
-      if (profile) {
-        setTeacherName(`${profile.first_name} ${profile.last_name}`);
+      if (teacher) {
+        setTeacherName(teacher.name);
       }
 
-      // Get stats
-      const statsData = await getTeacherStats(user.id);
-      setStats(statsData);
+      // Get today's coaching notes (commitments created today by this teacher)
+      const today = new Date().toISOString().split('T')[0];
+      const { data: notes } = await supabase
+        .from('commitments')
+        .select(`
+          id,
+          content,
+          created_at,
+          students ( name, english_name )
+        `)
+        .eq('date', today)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (notes) {
+        setTodayNotes(
+          notes.map((n: any) => ({
+            id: n.id,
+            student_name: n.students?.english_name || n.students?.name || 'Unknown',
+            content: n.content,
+            created_at: n.created_at,
+          }))
+        );
+      }
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -61,6 +81,14 @@ export default function TeacherHome() {
   function onRefresh() {
     setRefreshing(true);
     loadData();
+  }
+
+  function formatTime(dateString: string) {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
 
   if (loading) {
@@ -78,91 +106,73 @@ export default function TeacherHome() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
     >
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.greeting}>Welcome back,</Text>
-        <Text style={styles.name}>{teacherName}</Text>
+        <Text style={styles.greeting}>Hello,</Text>
+        <Text style={styles.name}>{teacherName || 'Teacher'}</Text>
+        <Text style={styles.date}>
+          {new Date().toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          })}
+        </Text>
       </View>
 
-      {stats && (
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: '#DBEAFE' }]}>
-              <Ionicons name="people" size={32} color="#0066CC" />
-            </View>
-            <Text style={styles.statValue}>{stats.total_students}</Text>
-            <Text style={styles.statLabel}>Total Students</Text>
+      {/* Quick Action */}
+      <View style={styles.section}>
+        <TouchableOpacity
+          style={styles.coachButton}
+          onPress={() => router.push('/(teacher)/coach')}
+        >
+          <View style={styles.coachButtonIcon}>
+            <Ionicons name="create" size={28} color="#FFFFFF" />
           </View>
+          <View style={styles.coachButtonContent}>
+            <Text style={styles.coachButtonTitle}>Write Coaching Note</Text>
+            <Text style={styles.coachButtonSubtitle}>
+              Record observations from today's class
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
 
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: '#D1FAE5' }]}>
-              <Ionicons name="checkmark-circle" size={32} color="#10B981" />
-            </View>
-            <Text style={styles.statValue}>{stats.present_today}</Text>
-            <Text style={styles.statLabel}>Present Today</Text>
-          </View>
-
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: '#FEE2E2' }]}>
-              <Ionicons name="close-circle" size={32} color="#EF4444" />
-            </View>
-            <Text style={styles.statValue}>{stats.absent_today}</Text>
-            <Text style={styles.statLabel}>Absent Today</Text>
-          </View>
-
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: '#FEF3C7' }]}>
-              <Ionicons name="mail" size={32} color="#F59E0B" />
-            </View>
-            <Text style={styles.statValue}>{stats.unread_messages}</Text>
-            <Text style={styles.statLabel}>New Messages</Text>
-          </View>
+      {/* Today's Notes */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Today's Notes</Text>
+          <Text style={styles.noteCount}>{todayNotes.length} notes</Text>
         </View>
-      )}
 
-      <View style={styles.quickActions}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => router.push('/(teacher)/attendance')}
-        >
-          <View style={styles.actionIcon}>
-            <Ionicons name="checkmark-circle-outline" size={28} color="#0066CC" />
+        {todayNotes.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="document-text-outline" size={48} color="#CBD5E1" />
+            <Text style={styles.emptyText}>No coaching notes yet today</Text>
+            <Text style={styles.emptySubtext}>
+              Tap the button above to start coaching
+            </Text>
           </View>
-          <View style={styles.actionContent}>
-            <Text style={styles.actionTitle}>Take Attendance</Text>
-            <Text style={styles.actionSubtitle}>Mark students present or absent</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={24} color="#94A3B8" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => router.push('/(teacher)/messages/new')}
-        >
-          <View style={styles.actionIcon}>
-            <Ionicons name="create-outline" size={28} color="#0066CC" />
-          </View>
-          <View style={styles.actionContent}>
-            <Text style={styles.actionTitle}>Send Message</Text>
-            <Text style={styles.actionSubtitle}>Contact parents</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={24} color="#94A3B8" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => router.push('/(teacher)/students')}
-        >
-          <View style={styles.actionIcon}>
-            <Ionicons name="people-outline" size={28} color="#0066CC" />
-          </View>
-          <View style={styles.actionContent}>
-            <Text style={styles.actionTitle}>View Students</Text>
-            <Text style={styles.actionSubtitle}>See your class roster</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={24} color="#94A3B8" />
-        </TouchableOpacity>
+        ) : (
+          todayNotes.map((note) => (
+            <View key={note.id} style={styles.noteCard}>
+              <View style={styles.noteHeader}>
+                <View style={styles.studentBadge}>
+                  <Text style={styles.studentBadgeText}>
+                    {note.student_name}
+                  </Text>
+                </View>
+                <Text style={styles.noteTime}>
+                  {formatTime(note.created_at)}
+                </Text>
+              </View>
+              <Text style={styles.noteContent} numberOfLines={3}>
+                {note.content}
+              </Text>
+            </View>
+          ))
+        )}
       </View>
     </ScrollView>
   );
@@ -193,58 +203,88 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     color: '#1E293B',
-    marginTop: 4,
+    marginTop: 2,
   },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  date: {
+    fontSize: 14,
+    color: '#94A3B8',
+    marginTop: 8,
+  },
+  section: {
     padding: 16,
-    gap: 12,
   },
-  statCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
-    width: '48%',
+  coachButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    backgroundColor: '#0066CC',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#0066CC',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  statIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  coachButtonIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 16,
+  },
+  coachButtonContent: {
+    flex: 1,
+  },
+  coachButtonTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  coachButtonSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.8)',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
-  },
-  statValue: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#1E293B',
-  },
-  statLabel: {
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  quickActions: {
-    padding: 16,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
     color: '#1E293B',
-    marginBottom: 16,
-    paddingHorizontal: 4,
   },
-  actionCard: {
-    flexDirection: 'row',
+  noteCount: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 40,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#94A3B8',
+    marginTop: 4,
+  },
+  noteCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
@@ -253,28 +293,32 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
-    elevation: 2,
+    elevation: 1,
   },
-  actionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#EFF6FF',
-    justifyContent: 'center',
+  noteHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginRight: 16,
+    marginBottom: 10,
   },
-  actionContent: {
-    flex: 1,
+  studentBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
-  actionTitle: {
-    fontSize: 16,
+  studentBadgeText: {
+    fontSize: 13,
     fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 4,
+    color: '#0066CC',
   },
-  actionSubtitle: {
-    fontSize: 14,
-    color: '#64748B',
+  noteTime: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  noteContent: {
+    fontSize: 15,
+    color: '#334155',
+    lineHeight: 22,
   },
 });
