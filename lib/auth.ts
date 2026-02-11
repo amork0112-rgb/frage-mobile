@@ -7,6 +7,7 @@ export type UserRole =
   | 'master_teacher'
   | 'teacher'
   | 'campus'
+  | 'driver'
   | 'parent'
   | 'unknown';
 
@@ -38,7 +39,19 @@ export async function getUserRole(user: User): Promise<UserRole> {
       return teacher.role as UserRole;
     }
 
-    // ✅ 3. Parent Check (students table)
+    // ✅ 3. Driver Check (drivers table)
+    const { data: driver } = await supabase
+      .from('drivers')
+      .select('id')
+      .eq('auth_user_id', user.id)
+      .maybeSingle();
+
+    if (driver) {
+      console.log('🚍 [Auth] Driver detected');
+      return 'driver';
+    }
+
+    // ✅ 4. Parent Check (students table)
     // Check if user has students enrolled
     const { data: students } = await supabase
       .from('students')

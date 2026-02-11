@@ -109,16 +109,17 @@ export async function getTeacherMessages(userId: string) {
 }
 
 export async function markAttendance(
-  studentId: string,
-  status: 'present' | 'absent',
-  date: string
+  userId: string,
+  date: string,
+  records: { student_id: string; status: 'present' | 'absent' }[]
 ) {
-  // Store attendance - uses commitments table as placeholder
-  const { error } = await supabase.from('commitments').insert({
-    student_id: studentId,
-    content: `Attendance: ${status}`,
+  const rows = records.map((r) => ({
+    student_id: r.student_id,
+    content: `Attendance: ${r.status}`,
     date: date,
-  });
+  }));
+
+  const { error } = await supabase.from('commitments').insert(rows);
 
   if (error) {
     console.error('Error marking attendance:', error);

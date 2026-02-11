@@ -41,6 +41,10 @@ export default function Index() {
           // Teachers go to teacher section
           router.replace('/(teacher)/home');
           break;
+        case 'driver':
+          // Drivers go to driver dashboard
+          router.replace('/(driver)/home');
+          break;
         case 'parent':
           // Parents go to parent section
           router.replace('/(parent)/home');

@@ -7,7 +7,7 @@ module.exports = {
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',
     scheme: 'frage',
-    newArchEnabled: true,
+    newArchEnabled: false,
     splash: {
       image: './assets/splash-icon.png',
       resizeMode: 'contain',

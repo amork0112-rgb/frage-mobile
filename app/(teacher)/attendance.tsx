@@ -19,11 +19,6 @@ interface Student {
   grade: string;
 }
 
-interface AttendanceRecord {
-  student_id: string;
-  status: 'present' | 'absent' | null;
-}
-
 export default function TeacherAttendance() {
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Map<string, 'present' | 'absent' | null>>(new Map());
@@ -76,11 +71,11 @@ export default function TeacherAttendance() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const records: AttendanceRecord[] = Array.from(attendance.entries())
-        .filter(([_, status]) => status !== null)
+      const records = Array.from(attendance.entries())
+        .filter((entry): entry is [string, 'present' | 'absent'] => entry[1] !== null)
         .map(([student_id, status]) => ({
           student_id,
-          status: status!,
+          status,
         }));
 
       if (records.length === 0) {

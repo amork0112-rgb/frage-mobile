@@ -19,7 +19,7 @@ export default function TeacherLayout() {
         },
         headerTintColor: '#FFFFFF',
         headerTitleStyle: {
-          fontWeight: '600',
+          fontWeight: '600' as const,
         },
       }}
     >
