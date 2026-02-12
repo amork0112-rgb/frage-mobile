@@ -15,24 +15,10 @@ import { supabase } from '../../lib/supabase';
 // Types
 type CommitmentStatus = 'unchecked' | 'done' | 'partial' | 'not_done';
 
-type Student = {
-  id: string;
-  student_name: string;
-  english_first_name: string;
-  send_status: 'not_sent' | 'sent' | 'failed';
-};
+type ClassItem = { id: string; name: string };
+type Student = { id: string; student_name: string; english_first_name: string };
+type Book = { id: string; name: string };
 
-type Subject = {
-  id: string;
-  title: string;
-};
-
-type ClassItem = {
-  id: string;
-  name: string;
-};
-
-// Status cycling
 const NEXT_STATUS: Record<CommitmentStatus, CommitmentStatus> = {
   unchecked: 'done',
   done: 'partial',
@@ -40,7 +26,10 @@ const NEXT_STATUS: Record<CommitmentStatus, CommitmentStatus> = {
   not_done: 'unchecked',
 };
 
-const STATUS_CONFIG: Record<CommitmentStatus, { icon: string; color: string; bg: string; label: string }> = {
+const STATUS_CONFIG: Record<
+  CommitmentStatus,
+  { icon: string; color: string; bg: string; label: string }
+> = {
   unchecked: { icon: 'square-outline', color: '#CBD5E1', bg: '#F8FAFC', label: '-' },
   done: { icon: 'checkmark-circle', color: '#22C55E', bg: '#F0FDF4', label: 'Done' },
   partial: { icon: 'warning', color: '#F59E0B', bg: '#FFFBEB', label: 'Partial' },
@@ -53,12 +42,13 @@ export default function CoachScreen() {
   const [sending, setSending] = useState(false);
 
   const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [selectedClassId, setSelectedClassId] = useState<string>('');
-  const [date] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedClassId, setSelectedClassId] = useState('');
+  const [date] = useState(new Date().toISOString().split('T')[0]);
 
   const [students, setStudents] = useState<Student[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
   const [commitments, setCommitments] = useState<Record<string, CommitmentStatus>>({});
+  const [sendStatuses, setSendStatuses] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadClasses();
@@ -66,13 +56,15 @@ export default function CoachScreen() {
 
   useEffect(() => {
     if (selectedClassId && date) {
-      loadCommitments();
+      loadData();
     }
   }, [selectedClassId, date]);
 
   async function loadClasses() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
 
       const { data: teacher } = await supabase
@@ -100,45 +92,71 @@ export default function CoachScreen() {
     }
   }
 
-  async function loadCommitments() {
+  async function loadData() {
     setLoading(true);
     try {
-      // Load students for this class
+      // 1. Load students for this class (main_class, NOT class_id)
       const { data: studentData } = await supabase
         .from('students')
         .select('id, student_name, english_first_name')
-        .eq('class_id', selectedClassId)
+        .eq('main_class', selectedClassId)
         .order('student_name');
 
-      // Load subjects/books for this class
-      const { data: subjectData } = await supabase
-        .from('books')
-        .select('id, title')
-        .eq('class_id', selectedClassId)
-        .order('title');
+      setStudents(studentData || []);
 
-      // Load existing commitments for today
+      // 2. Load student_commitments for this class + date
       const { data: commitmentData } = await supabase
-        .from('commitments')
-        .select('id, student_id, book_id, status')
+        .from('student_commitments')
+        .select('student_id, book_id, status')
         .eq('class_id', selectedClassId)
         .eq('date', date);
 
-      setStudents(
-        (studentData || []).map((s) => ({
-          ...s,
-          send_status: 'not_sent' as const,
-        }))
-      );
-      setSubjects(subjectData || []);
+      // 3. Extract unique book_ids and load book names
+      const bookIds = [
+        ...new Set(
+          (commitmentData || []).map((c: any) => c.book_id).filter(Boolean)
+        ),
+      ];
+      const bookMap: Record<string, string> = {};
 
+      if (bookIds.length > 0) {
+        const { data: bookData } = await supabase
+          .from('books')
+          .select('id, name')
+          .in('id', bookIds);
+
+        (bookData || []).forEach((b: any) => {
+          bookMap[b.id] = b.name;
+        });
+
+        setBooks(
+          bookIds.map((id) => ({ id, name: bookMap[id] || '과목 미지정' }))
+        );
+      } else {
+        setBooks([]);
+      }
+
+      // 4. Map commitments: key = "studentId-bookId" -> status
       const map: Record<string, CommitmentStatus> = {};
       (commitmentData || []).forEach((c: any) => {
-        map[`${c.student_id}-${c.book_id}`] = c.status;
+        map[`${c.student_id}-${c.book_id}`] = c.status || 'unchecked';
       });
       setCommitments(map);
+
+      // 5. Load daily_reports send status
+      const { data: reportData } = await supabase
+        .from('daily_reports')
+        .select('student_id, send_status')
+        .eq('class_id', selectedClassId)
+        .eq('date', date);
+
+      const statusMap: Record<string, string> = {};
+      (reportData || []).forEach((r: any) => {
+        statusMap[r.student_id] = r.send_status;
+      });
+      setSendStatuses(statusMap);
     } catch (error) {
-      console.error('Error loading commitments:', error);
+      console.error('Error loading data:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -154,19 +172,16 @@ export default function CoachScreen() {
     setCommitments((prev) => ({ ...prev, [key]: nextStatus }));
 
     try {
-      // Upsert commitment
-      const { error } = await supabase
-        .from('commitments')
-        .upsert(
-          {
-            student_id: studentId,
-            class_id: selectedClassId,
-            book_id: bookId,
-            date: date,
-            status: nextStatus,
-          },
-          { onConflict: 'student_id,book_id,date' }
-        );
+      const { error } = await supabase.from('student_commitments').upsert(
+        {
+          student_id: studentId,
+          class_id: selectedClassId,
+          book_id: bookId,
+          date: date,
+          status: nextStatus,
+        },
+        { onConflict: 'student_id,class_id,book_id,date' }
+      );
 
       if (error) throw error;
     } catch (error) {
@@ -183,31 +198,45 @@ export default function CoachScreen() {
       return;
     }
 
-    // Check if any commitments exist
-    const hasCommitments = Object.keys(commitments).some(
-      (key) => commitments[key] !== 'unchecked'
+    const hasChecked = Object.values(commitments).some(
+      (s) => s !== 'unchecked'
     );
-
-    if (!hasCommitments) {
+    if (!hasChecked) {
       Alert.alert('Error', 'No coaching records to send');
       return;
     }
 
     Alert.alert(
       'Send to Parents',
-      'Send today\'s coaching results to all parents in this class?',
+      "Send today's coaching results to all parents in this class?",
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Send',
-          style: 'default',
           onPress: async () => {
             setSending(true);
             try {
-              // Mark as sent in local state
-              setStudents((prev) =>
-                prev.map((s) => ({ ...s, send_status: 'sent' as const }))
-              );
+              const rows = students.map((s) => ({
+                student_id: s.id,
+                class_id: selectedClassId,
+                date,
+                send_status: 'sent',
+              }));
+
+              const { error } = await supabase
+                .from('daily_reports')
+                .upsert(rows, {
+                  onConflict: 'student_id,class_id,date',
+                });
+
+              if (error) throw error;
+
+              const statusMap: Record<string, string> = {};
+              students.forEach((s) => {
+                statusMap[s.id] = 'sent';
+              });
+              setSendStatuses(statusMap);
+
               Alert.alert('Success', 'Coaching results sent to parents!');
             } catch (error) {
               console.error('Error sending reports:', error);
@@ -223,36 +252,26 @@ export default function CoachScreen() {
 
   function onRefresh() {
     setRefreshing(true);
-    loadCommitments();
+    loadData();
   }
 
-  function renderStatusButton(studentId: string, subject: Subject) {
-    const key = `${studentId}-${subject.id}`;
-    const status = commitments[key] || 'unchecked';
-    const config = STATUS_CONFIG[status];
-
-    return (
-      <TouchableOpacity
-        key={key}
-        style={[styles.statusButton, { backgroundColor: config.bg }]}
-        onPress={() => handleStatusToggle(studentId, subject.id)}
-        activeOpacity={0.6}
-      >
-        <Ionicons name={config.icon as any} size={20} color={config.color} />
-        <Text style={[styles.subjectName, { color: status === 'unchecked' ? '#94A3B8' : '#1E293B' }]} numberOfLines={1}>
-          {subject.title}
-        </Text>
-      </TouchableOpacity>
-    );
+  function getStudentName(student: Student) {
+    return student.english_first_name || student.student_name;
   }
 
-  const isAlreadySent = students.some((s) => s.send_status === 'sent');
+  const isAllSent =
+    students.length > 0 &&
+    students.every((s) => sendStatuses[s.id] === 'sent');
 
   return (
     <View style={styles.container}>
       {/* Class Selector */}
       <View style={styles.classSelector}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.classScroll}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.classScroll}
+        >
           {classes.map((cls) => (
             <TouchableOpacity
               key={cls.id}
@@ -281,9 +300,15 @@ export default function CoachScreen() {
       {/* Legend */}
       <View style={styles.legend}>
         <Text style={styles.legendLabel}>Tap to cycle:</Text>
-        {(['done', 'partial', 'not_done', 'unchecked'] as CommitmentStatus[]).map((s) => (
+        {(
+          ['done', 'partial', 'not_done', 'unchecked'] as CommitmentStatus[]
+        ).map((s) => (
           <View key={s} style={styles.legendItem}>
-            <Ionicons name={STATUS_CONFIG[s].icon as any} size={16} color={STATUS_CONFIG[s].color} />
+            <Ionicons
+              name={STATUS_CONFIG[s].icon as any}
+              size={16}
+              color={STATUS_CONFIG[s].color}
+            />
             <Text style={styles.legendText}>{STATUS_CONFIG[s].label}</Text>
           </View>
         ))}
@@ -306,18 +331,34 @@ export default function CoachScreen() {
               <Ionicons name="people-outline" size={48} color="#CBD5E1" />
               <Text style={styles.emptyText}>No students in this class</Text>
             </View>
+          ) : books.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons
+                name="document-text-outline"
+                size={48}
+                color="#CBD5E1"
+              />
+              <Text style={styles.emptyText}>No coaching items for today</Text>
+              <Text style={styles.emptySubtext}>
+                Set up commitments in the web app
+              </Text>
+            </View>
           ) : (
             students.map((student) => (
               <View key={student.id} style={styles.studentCard}>
                 {/* Student Header */}
                 <View style={styles.studentHeader}>
                   <View style={styles.studentInfo}>
-                    <Text style={styles.studentName}>{student.student_name}</Text>
-                    {student.english_first_name ? (
-                      <Text style={styles.studentEnglish}>({student.english_first_name})</Text>
+                    <Text style={styles.studentName}>
+                      {getStudentName(student)}
+                    </Text>
+                    {student.english_first_name && student.student_name ? (
+                      <Text style={styles.studentKorean}>
+                        ({student.student_name})
+                      </Text>
                     ) : null}
                   </View>
-                  {student.send_status === 'sent' && (
+                  {sendStatuses[student.id] === 'sent' && (
                     <View style={styles.sentBadge}>
                       <Text style={styles.sentBadgeText}>Sent</Text>
                     </View>
@@ -325,36 +366,69 @@ export default function CoachScreen() {
                 </View>
 
                 {/* Subject Status Grid */}
-                {subjects.length > 0 ? (
-                  <View style={styles.statusGrid}>
-                    {subjects.map((sub) => renderStatusButton(student.id, sub))}
-                  </View>
-                ) : (
-                  <Text style={styles.noSubjectsText}>No subjects assigned</Text>
-                )}
+                <View style={styles.statusGrid}>
+                  {books.map((book) => {
+                    const key = `${student.id}-${book.id}`;
+                    const status = commitments[key] || 'unchecked';
+                    const config = STATUS_CONFIG[status];
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        style={[
+                          styles.statusButton,
+                          { backgroundColor: config.bg },
+                        ]}
+                        onPress={() =>
+                          handleStatusToggle(student.id, book.id)
+                        }
+                        activeOpacity={0.6}
+                      >
+                        <Ionicons
+                          name={config.icon as any}
+                          size={20}
+                          color={config.color}
+                        />
+                        <Text
+                          style={[
+                            styles.subjectName,
+                            {
+                              color:
+                                status === 'unchecked'
+                                  ? '#94A3B8'
+                                  : '#1E293B',
+                            },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {book.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
             ))
           )}
 
           {/* Send Button */}
-          {students.length > 0 && (
+          {students.length > 0 && books.length > 0 && (
             <TouchableOpacity
               style={[
                 styles.sendButton,
-                (sending || isAlreadySent) && styles.sendButtonDisabled,
+                (sending || isAllSent) && styles.sendButtonDisabled,
               ]}
               onPress={handleSendReports}
-              disabled={sending || isAlreadySent}
+              disabled={sending || isAllSent}
             >
               <Ionicons
-                name={isAlreadySent ? 'checkmark-circle' : 'send'}
+                name={isAllSent ? 'checkmark-circle' : 'send'}
                 size={20}
                 color="#FFFFFF"
               />
               <Text style={styles.sendButtonText}>
                 {sending
                   ? 'Sending...'
-                  : isAlreadySent
+                  : isAllSent
                   ? 'Sent to Parents'
                   : 'Send to Parents'}
               </Text>
@@ -474,7 +548,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1E293B',
   },
-  studentEnglish: {
+  studentKorean: {
     fontSize: 13,
     color: '#64748B',
   },
@@ -512,11 +586,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flex: 1,
   },
-  noSubjectsText: {
-    fontSize: 13,
-    color: '#94A3B8',
-    fontStyle: 'italic',
-  },
 
   // Empty State
   emptyContainer: {
@@ -529,6 +598,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#64748B',
     marginTop: 12,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#94A3B8',
+    marginTop: 4,
   },
 
   // Send Button

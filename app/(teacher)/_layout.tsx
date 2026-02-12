@@ -56,7 +56,6 @@ export default function TeacherLayout() {
       <Tabs.Screen name="messages" options={{ href: null }} />
       <Tabs.Screen name="profile" options={{ href: null }} />
       <Tabs.Screen name="classes" options={{ href: null }} />
-      <Tabs.Screen name="send-commitments" options={{ href: null }} />
       <Tabs.Screen name="student" options={{ href: null }} />
       <Tabs.Screen name="message" options={{ href: null }} />
     </Tabs>

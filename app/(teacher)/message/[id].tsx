@@ -38,19 +38,21 @@ export default function MessageDetail() {
           body,
           created_at,
           recipient:profiles!messages_recipient_id_fkey(first_name, last_name),
-          student:students(first_name, last_name)
+          student:students!inner(student_name, english_first_name)
         `)
         .eq('id', id)
         .single();
 
       if (error) throw error;
 
+      const recipient = data.recipient as any;
+      const student = data.student as any;
       const messageData = {
         id: data.id,
         subject: data.subject,
         body: data.body,
-        recipient_name: `${data.recipient.first_name} ${data.recipient.last_name}`,
-        student_name: `${data.student.first_name} ${data.student.last_name}`,
+        recipient_name: recipient ? `${recipient.first_name || ''} ${recipient.last_name || ''}`.trim() : '',
+        student_name: student?.english_first_name || student?.student_name || '',
         created_at: data.created_at,
       };
 

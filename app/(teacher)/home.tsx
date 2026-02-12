@@ -12,11 +12,12 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 
-interface CoachingNote {
+interface ClassStatus {
   id: string;
-  student_name: string;
-  content: string;
-  created_at: string;
+  name: string;
+  total: number;
+  checked: number;
+  sent: boolean;
 }
 
 export default function TeacherHome() {
@@ -24,7 +25,7 @@ export default function TeacherHome() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [teacherName, setTeacherName] = useState('');
-  const [todayNotes, setTodayNotes] = useState<CoachingNote[]>([]);
+  const [classStatuses, setClassStatuses] = useState<ClassStatus[]>([]);
 
   useEffect(() => {
     loadData();
@@ -32,43 +33,69 @@ export default function TeacherHome() {
 
   async function loadData() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Get teacher name
+      // Get teacher name and email
       const { data: teacher } = await supabase
         .from('teachers')
-        .select('name')
+        .select('name, email')
         .eq('auth_user_id', user.id)
         .single();
 
-      if (teacher) {
-        setTeacherName(teacher.name);
-      }
+      if (!teacher) return;
 
-      // Get today's coaching notes (commitments created today by this teacher)
+      setTeacherName(teacher.name);
+
       const today = new Date().toISOString().split('T')[0];
-      const { data: notes } = await supabase
-        .from('commitments')
-        .select(`
-          id,
-          content,
-          created_at,
-          students ( student_name, english_first_name )
-        `)
-        .eq('date', today)
-        .order('created_at', { ascending: false })
-        .limit(20);
 
-      if (notes) {
-        setTodayNotes(
-          notes.map((n: any) => ({
-            id: n.id,
-            student_name: n.students?.english_first_name || n.students?.student_name || 'Unknown',
-            content: n.content,
-            created_at: n.created_at,
-          }))
-        );
+      // Get teacher's classes
+      const { data: classData } = await supabase
+        .from('classes')
+        .select('id, name')
+        .eq('teacher_id', teacher.email)
+        .order('name');
+
+      if (classData && classData.length > 0) {
+        const statuses: ClassStatus[] = [];
+
+        for (const cls of classData) {
+          // Load student_commitments for this class today
+          const { data: scData } = await supabase
+            .from('student_commitments')
+            .select('status')
+            .eq('class_id', cls.id)
+            .eq('date', today);
+
+          const items = scData || [];
+          const checked = items.filter(
+            (i: any) => i.status !== 'unchecked'
+          ).length;
+
+          // Check daily_reports send status
+          const { data: drData } = await supabase
+            .from('daily_reports')
+            .select('send_status')
+            .eq('class_id', cls.id)
+            .eq('date', today)
+            .limit(1);
+
+          const sent = (drData || []).some(
+            (d: any) => d.send_status === 'sent'
+          );
+
+          statuses.push({
+            id: cls.id,
+            name: cls.name,
+            total: items.length,
+            checked,
+            sent,
+          });
+        }
+
+        setClassStatuses(statuses);
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -81,14 +108,6 @@ export default function TeacherHome() {
   function onRefresh() {
     setRefreshing(true);
     loadData();
-  }
-
-  function formatTime(dateString: string) {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
   }
 
   if (loading) {
@@ -130,47 +149,73 @@ export default function TeacherHome() {
             <Ionicons name="create" size={28} color="#FFFFFF" />
           </View>
           <View style={styles.coachButtonContent}>
-            <Text style={styles.coachButtonTitle}>Write Coaching Note</Text>
+            <Text style={styles.coachButtonTitle}>Start Coaching</Text>
             <Text style={styles.coachButtonSubtitle}>
-              Record observations from today's class
+              Check today's student commitments
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
-      {/* Today's Notes */}
+      {/* Today's Classes */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Today's Notes</Text>
-          <Text style={styles.noteCount}>{todayNotes.length} notes</Text>
+          <Text style={styles.sectionTitle}>Today's Classes</Text>
+          <Text style={styles.classCount}>
+            {classStatuses.length} classes
+          </Text>
         </View>
 
-        {todayNotes.length === 0 ? (
+        {classStatuses.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Ionicons name="document-text-outline" size={48} color="#CBD5E1" />
-            <Text style={styles.emptyText}>No coaching notes yet today</Text>
-            <Text style={styles.emptySubtext}>
-              Tap the button above to start coaching
-            </Text>
+            <Ionicons name="school-outline" size={48} color="#CBD5E1" />
+            <Text style={styles.emptyText}>No classes assigned</Text>
           </View>
         ) : (
-          todayNotes.map((note) => (
-            <View key={note.id} style={styles.noteCard}>
-              <View style={styles.noteHeader}>
-                <View style={styles.studentBadge}>
-                  <Text style={styles.studentBadgeText}>
-                    {note.student_name}
+          classStatuses.map((cls) => (
+            <TouchableOpacity
+              key={cls.id}
+              style={styles.classCard}
+              onPress={() => router.push('/(teacher)/coach')}
+            >
+              <View style={styles.classCardHeader}>
+                <Text style={styles.className}>{cls.name}</Text>
+                {cls.sent && (
+                  <View style={styles.sentBadge}>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={14}
+                      color="#16A34A"
+                    />
+                    <Text style={styles.sentBadgeText}>Sent</Text>
+                  </View>
+                )}
+              </View>
+              {cls.total > 0 ? (
+                <View style={styles.progressRow}>
+                  <View style={styles.progressBar}>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        {
+                          width: `${
+                            cls.total > 0
+                              ? (cls.checked / cls.total) * 100
+                              : 0
+                          }%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.progressText}>
+                    {cls.checked}/{cls.total}
                   </Text>
                 </View>
-                <Text style={styles.noteTime}>
-                  {formatTime(note.created_at)}
-                </Text>
-              </View>
-              <Text style={styles.noteContent} numberOfLines={3}>
-                {note.content}
-              </Text>
-            </View>
+              ) : (
+                <Text style={styles.noItemsText}>No coaching items</Text>
+              )}
+            </TouchableOpacity>
           ))
         )}
       </View>
@@ -258,7 +303,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1E293B',
   },
-  noteCount: {
+  classCount: {
     fontSize: 14,
     color: '#64748B',
   },
@@ -279,12 +324,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 16,
   },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#94A3B8',
-    marginTop: 4,
-  },
-  noteCard: {
+  classCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
@@ -295,30 +335,58 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
-  noteHeader: {
+  classCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
   },
-  studentBadge: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
+  className: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  sentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
+    gap: 4,
   },
-  studentBadgeText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#0066CC',
-  },
-  noteTime: {
+  sentBadgeText: {
     fontSize: 12,
-    color: '#94A3B8',
+    fontWeight: '600',
+    color: '#16A34A',
   },
-  noteContent: {
-    fontSize: 15,
-    color: '#334155',
-    lineHeight: 22,
+  progressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  progressBar: {
+    flex: 1,
+    height: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#22C55E',
+    borderRadius: 4,
+  },
+  progressText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+    minWidth: 40,
+    textAlign: 'right',
+  },
+  noItemsText: {
+    fontSize: 13,
+    color: '#94A3B8',
+    fontStyle: 'italic',
   },
 });
