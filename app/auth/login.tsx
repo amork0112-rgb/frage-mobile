@@ -33,7 +33,8 @@ export default function Login() {
 
       if (error) throw error;
 
-      // Navigation will be handled by _layout.tsx auth listener
+      // Redirect to index which handles role-based routing
+      router.replace('/');
     } catch (error: any) {
       Alert.alert('Login Failed', error.message);
     } finally {
