@@ -13,21 +13,26 @@ export type UserRole =
 
 export async function getUserRole(user: User): Promise<UserRole> {
   try {
-    // ✅ 1. Admin Check (profiles table)
-    // admin / master_admin are in 'profiles' table (no role column needed, just existence)
+    // ✅ 1. Profiles table check (admin, master_admin, driver)
     const { data: profile } = await supabase
       .from('profiles')
-      .select('id')
+      .select('id, role')
       .eq('id', user.id)
       .maybeSingle();
 
     if (profile) {
-      console.log('👨‍💼 [Auth] Admin detected (in profiles table)');
-      return 'admin';
+      const role = profile.role;
+      if (role === 'admin' || role === 'master_admin') {
+        console.log('[Auth] Admin detected. Role:', role);
+        return role as UserRole;
+      }
+      if (role === 'driver') {
+        console.log('[Auth] Driver detected');
+        return 'driver';
+      }
     }
 
     // ✅ 2. Teacher Check (teachers table)
-    // teacher / master_teacher are in 'teachers' table
     const { data: teacher } = await supabase
       .from('teachers')
       .select('role')
@@ -35,24 +40,11 @@ export async function getUserRole(user: User): Promise<UserRole> {
       .maybeSingle();
 
     if (teacher?.role) {
-      console.log('👨‍🏫 [Auth] Teacher detected. Role:', teacher.role);
+      console.log('[Auth] Teacher detected. Role:', teacher.role);
       return teacher.role as UserRole;
     }
 
-    // ✅ 3. Driver Check (drivers table)
-    const { data: driver } = await supabase
-      .from('drivers')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .maybeSingle();
-
-    if (driver) {
-      console.log('🚍 [Auth] Driver detected');
-      return 'driver';
-    }
-
-    // ✅ 4. Parent Check (students table)
-    // Check if user has students enrolled
+    // ✅ 3. Parent Check (students table)
     const { data: students } = await supabase
       .from('students')
       .select('id')
@@ -60,11 +52,11 @@ export async function getUserRole(user: User): Promise<UserRole> {
       .limit(1);
 
     if (students && students.length > 0) {
-      console.log('👨‍👩‍👧 [Auth] Parent detected (has students)');
+      console.log('[Auth] Parent detected (has students)');
       return 'parent';
     }
 
-    console.log('❓ [Auth] No role found for user');
+    console.log('[Auth] No role found for user');
     return 'unknown';
   } catch (error) {
     console.error('Error getting user role:', error);
