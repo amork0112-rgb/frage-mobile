@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { apiFetch } from '../../lib/api';
 
 // Types
 type CommitmentStatus = 'unchecked' | 'done' | 'partial' | 'not_done';
@@ -60,6 +61,7 @@ export default function CoachScreen() {
     }
   }, [selectedClassId, date]);
 
+  // loadClasses: read-only Supabase query (no API endpoint for this)
   async function loadClasses() {
     try {
       const {
@@ -75,7 +77,6 @@ export default function CoachScreen() {
 
       if (!teacher) return;
 
-      // Get class names via teacher_classes join table
       const { data: tcData } = await supabase
         .from('teacher_classes')
         .select('class_name')
@@ -102,66 +103,32 @@ export default function CoachScreen() {
     }
   }
 
+  // loadData: GET /api/teacher/commitments?class_id=...&date=...
   async function loadData() {
     setLoading(true);
     try {
-      // 1. Load students for this class (main_class, NOT class_id)
-      const { data: studentData } = await supabase
-        .from('students')
-        .select('id, student_name, english_first_name')
-        .eq('main_class', selectedClassId)
-        .order('student_name');
+      const res = await apiFetch(
+        `/api/teacher/commitments?class_id=${selectedClassId}&date=${date}`
+      );
+      const json = await res.json();
 
-      setStudents(studentData || []);
-
-      // 2. Load student_commitments for this class + date
-      const { data: commitmentData } = await supabase
-        .from('student_commitments')
-        .select('student_id, book_id, status')
-        .eq('class_id', selectedClassId)
-        .eq('date', date);
-
-      // 3. Extract unique book_ids and load book names
-      const bookIds = [
-        ...new Set(
-          (commitmentData || []).map((c: any) => c.book_id).filter(Boolean)
-        ),
-      ];
-      const bookMap: Record<string, string> = {};
-
-      if (bookIds.length > 0) {
-        const { data: bookData } = await supabase
-          .from('books')
-          .select('id, name')
-          .in('id', bookIds);
-
-        (bookData || []).forEach((b: any) => {
-          bookMap[b.id] = b.name;
-        });
-
-        setBooks(
-          bookIds.map((id) => ({ id, name: bookMap[id] || '과목 미지정' }))
-        );
-      } else {
-        setBooks([]);
+      if (!res.ok) {
+        console.error('API error:', json);
+        return;
       }
 
-      // 4. Map commitments: key = "studentId-bookId" -> status
+      // Map API response to local state
+      setStudents(json.students || []);
+      setBooks(json.books || []);
+
       const map: Record<string, CommitmentStatus> = {};
-      (commitmentData || []).forEach((c: any) => {
+      (json.commitments || []).forEach((c: any) => {
         map[`${c.student_id}-${c.book_id}`] = c.status || 'unchecked';
       });
       setCommitments(map);
 
-      // 5. Load daily_reports send status
-      const { data: reportData } = await supabase
-        .from('daily_reports')
-        .select('student_id, send_status')
-        .eq('class_id', selectedClassId)
-        .eq('date', date);
-
       const statusMap: Record<string, string> = {};
-      (reportData || []).forEach((r: any) => {
+      (json.send_statuses || []).forEach((r: any) => {
         statusMap[r.student_id] = r.send_status;
       });
       setSendStatuses(statusMap);
@@ -173,6 +140,7 @@ export default function CoachScreen() {
     }
   }
 
+  // handleStatusToggle: POST /api/teacher/commitments
   async function handleStatusToggle(studentId: string, bookId: string) {
     const key = `${studentId}-${bookId}`;
     const currentStatus = commitments[key] || 'unchecked';
@@ -182,18 +150,21 @@ export default function CoachScreen() {
     setCommitments((prev) => ({ ...prev, [key]: nextStatus }));
 
     try {
-      const { error } = await supabase.from('student_commitments').upsert(
-        {
-          student_id: studentId,
+      const res = await apiFetch('/api/teacher/commitments', {
+        method: 'POST',
+        body: JSON.stringify({
           class_id: selectedClassId,
+          date,
+          student_id: studentId,
           book_id: bookId,
-          date: date,
           status: nextStatus,
-        },
-        { onConflict: 'student_id,class_id,book_id,date' }
-      );
+        }),
+      });
 
-      if (error) throw error;
+      if (!res.ok) {
+        const json = await res.json();
+        throw new Error(json.error || 'Failed to save');
+      }
     } catch (error) {
       // Revert on failure
       setCommitments((prev) => ({ ...prev, [key]: currentStatus }));
@@ -202,6 +173,7 @@ export default function CoachScreen() {
     }
   }
 
+  // handleSendReports: POST /api/teacher/dagym/send
   async function handleSendReports() {
     if (!selectedClassId || students.length === 0) {
       Alert.alert('Error', 'No students to send reports to');
@@ -226,21 +198,21 @@ export default function CoachScreen() {
           onPress: async () => {
             setSending(true);
             try {
-              const rows = students.map((s) => ({
-                student_id: s.id,
-                class_id: selectedClassId,
-                date,
-                send_status: 'sent',
-              }));
+              const res = await apiFetch('/api/teacher/dagym/send', {
+                method: 'POST',
+                body: JSON.stringify({
+                  class_id: selectedClassId,
+                  date,
+                }),
+              });
 
-              const { error } = await supabase
-                .from('daily_reports')
-                .upsert(rows, {
-                  onConflict: 'student_id,class_id,date',
-                });
+              const json = await res.json();
 
-              if (error) throw error;
+              if (!res.ok) {
+                throw new Error(json.error || 'Failed to send');
+              }
 
+              // Update local send statuses
               const statusMap: Record<string, string> = {};
               students.forEach((s) => {
                 statusMap[s.id] = 'sent';

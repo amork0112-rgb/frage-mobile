@@ -11,6 +11,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { apiFetch } from '../../lib/api';
 
 interface ClassStatus {
   id: string;
@@ -38,7 +39,7 @@ export default function TeacherHome() {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Get teacher record
+      // Get teacher name (read-only Supabase)
       const { data: teacher } = await supabase
         .from('teachers')
         .select('id, name')
@@ -46,66 +47,22 @@ export default function TeacherHome() {
         .single();
 
       if (!teacher) return;
-
       setTeacherName(teacher.name);
 
-      const today = new Date().toISOString().split('T')[0];
+      // Get dagym status from API
+      const res = await apiFetch('/api/teacher/dagym/status');
+      const json = await res.json();
 
-      // Get class names via teacher_classes join table
-      const { data: tcData } = await supabase
-        .from('teacher_classes')
-        .select('class_name')
-        .eq('teacher_id', teacher.id);
-
-      const classNames = (tcData || []).map((tc: any) => tc.class_name);
-
-      // Get class details
-      const { data: classData } = classNames.length > 0
-        ? await supabase
-            .from('classes')
-            .select('id, name')
-            .in('name', classNames)
-            .order('name')
-        : { data: [] as any[] };
-
-      if (classData && classData.length > 0) {
-        const statuses: ClassStatus[] = [];
-
-        for (const cls of classData) {
-          // Load student_commitments for this class today
-          const { data: scData } = await supabase
-            .from('student_commitments')
-            .select('status')
-            .eq('class_id', cls.id)
-            .eq('date', today);
-
-          const items = scData || [];
-          const checked = items.filter(
-            (i: any) => i.status !== 'unchecked'
-          ).length;
-
-          // Check daily_reports send status
-          const { data: drData } = await supabase
-            .from('daily_reports')
-            .select('send_status')
-            .eq('class_id', cls.id)
-            .eq('date', today)
-            .limit(1);
-
-          const sent = (drData || []).some(
-            (d: any) => d.send_status === 'sent'
-          );
-
-          statuses.push({
-            id: cls.id,
-            name: cls.name,
-            total: items.length,
-            checked,
-            sent,
-          });
-        }
-
-        setClassStatuses(statuses);
+      if (res.ok && json.classes) {
+        setClassStatuses(
+          json.classes.map((cls: any) => ({
+            id: cls.id || cls.class_id,
+            name: cls.name || cls.class_name,
+            total: cls.total || 0,
+            checked: cls.checked || 0,
+            sent: cls.sent || false,
+          }))
+        );
       }
     } catch (error) {
       console.error('Error loading data:', error);

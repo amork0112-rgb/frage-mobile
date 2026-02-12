@@ -42,6 +42,15 @@ export default function TeacherLayout() {
         }}
       />
       <Tabs.Screen
+        name="morning-message"
+        options={{
+          title: 'Message',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="mail" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
