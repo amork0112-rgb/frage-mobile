@@ -32,8 +32,9 @@ export default function Index() {
       switch (role) {
         case 'master_admin':
         case 'admin':
-          // Admin users go to admin section
-          router.replace('/(admin)/home');
+          // Admin은 웹에서만 사용 — 로그아웃 후 로그인 화면으로
+          await supabase.auth.signOut();
+          router.replace('/auth/login');
           break;
         case 'master_teacher':
         case 'teacher':
