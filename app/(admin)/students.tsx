@@ -12,8 +12,8 @@ import { supabase } from '../../lib/supabase';
 
 type Student = {
   id: string;
-  name: string;
-  english_name: string;
+  student_name: string;
+  english_first_name: string;
   campus: string;
 };
 
@@ -32,8 +32,8 @@ export default function AdminStudents() {
     if (searchQuery) {
       const filtered = students.filter(
         (s) =>
-          s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          s.english_name.toLowerCase().includes(searchQuery.toLowerCase())
+          s.student_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          s.english_first_name.toLowerCase().includes(searchQuery.toLowerCase())
       );
       setFilteredStudents(filtered);
     } else {
@@ -45,8 +45,8 @@ export default function AdminStudents() {
     try {
       const { data } = await supabase
         .from('students')
-        .select('id, name, english_name, campus')
-        .order('name');
+        .select('id, student_name, english_first_name, campus')
+        .order('student_name');
 
       if (data) {
         setStudents(data);
@@ -69,8 +69,8 @@ export default function AdminStudents() {
     return (
       <View style={styles.studentItem}>
         <View style={styles.studentInfo}>
-          <Text style={styles.studentName}>{item.name}</Text>
-          <Text style={styles.studentEnglishName}>{item.english_name}</Text>
+          <Text style={styles.studentName}>{item.student_name}</Text>
+          <Text style={styles.studentEnglishName}>{item.english_first_name}</Text>
         </View>
         <Text style={styles.campus}>{item.campus}</Text>
       </View>

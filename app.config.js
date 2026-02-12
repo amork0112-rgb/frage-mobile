@@ -4,7 +4,7 @@ module.exports = {
     slug: 'frage-mobile',
     version: '1.0.0',
     orientation: 'portrait',
-    icon: './assets/icon.png',
+    icon: './assets/logo.png',
     userInterfaceStyle: 'light',
     scheme: 'frage',
     newArchEnabled: false,
@@ -31,13 +31,7 @@ module.exports = {
     },
     plugins: [
       'expo-router',
-      [
-        'expo-notifications',
-        {
-          icon: './assets/notification-icon.png',
-          color: '#0066CC',
-        },
-      ],
+      'expo-notifications',
     ],
     extra: {
       router: {

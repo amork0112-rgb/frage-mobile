@@ -54,7 +54,7 @@ export default function TeacherHome() {
           id,
           content,
           created_at,
-          students ( name, english_name )
+          students ( student_name, english_first_name )
         `)
         .eq('date', today)
         .order('created_at', { ascending: false })
@@ -64,7 +64,7 @@ export default function TeacherHome() {
         setTodayNotes(
           notes.map((n: any) => ({
             id: n.id,
-            student_name: n.students?.english_name || n.students?.name || 'Unknown',
+            student_name: n.students?.english_first_name || n.students?.student_name || 'Unknown',
             content: n.content,
             created_at: n.created_at,
           }))

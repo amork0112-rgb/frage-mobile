@@ -44,7 +44,7 @@ export default function DriverHome() {
       // Section 1: Absences & early pickups
       const { data: absenceData } = await supabase
         .from('portal_requests')
-        .select('id, type, payload, students ( name, english_name )')
+        .select('id, type, payload, students ( student_name, english_first_name )')
         .in('type', ['absence', 'early_pickup'])
         .eq('status', 'pending');
 
@@ -62,7 +62,7 @@ export default function DriverHome() {
         if (isToday) {
           absenceItems.push({
             id: r.id,
-            studentName: r.students?.name || r.students?.english_name || '이름 없음',
+            studentName: r.students?.student_name || r.students?.english_first_name || '이름 없음',
             type: r.type,
             time: r.type === 'early_pickup' ? payload?.time : undefined,
           });
@@ -73,7 +73,7 @@ export default function DriverHome() {
       // Section 2: Bus changes & requests
       const { data: changeData } = await supabase
         .from('portal_requests')
-        .select('id, type, payload, students ( name, english_name )')
+        .select('id, type, payload, students ( student_name, english_first_name )')
         .eq('type', 'bus_change')
         .eq('status', 'pending');
 
@@ -85,7 +85,7 @@ export default function DriverHome() {
         if (today === dateStart) {
           changeItems.push({
             id: r.id,
-            studentName: r.students?.name || r.students?.english_name || '이름 없음',
+            studentName: r.students?.student_name || r.students?.english_first_name || '이름 없음',
             note: payload?.note || getChangeTypeLabel(payload?.changeType),
           });
         }

@@ -17,8 +17,8 @@ type CommitmentStatus = 'unchecked' | 'done' | 'partial' | 'not_done';
 
 type Student = {
   id: string;
-  name: string;
-  english_name: string;
+  student_name: string;
+  english_first_name: string;
   send_status: 'not_sent' | 'sent' | 'failed';
 };
 
@@ -106,9 +106,9 @@ export default function CoachScreen() {
       // Load students for this class
       const { data: studentData } = await supabase
         .from('students')
-        .select('id, name, english_name')
+        .select('id, student_name, english_first_name')
         .eq('class_id', selectedClassId)
-        .order('name');
+        .order('student_name');
 
       // Load subjects/books for this class
       const { data: subjectData } = await supabase
@@ -312,9 +312,9 @@ export default function CoachScreen() {
                 {/* Student Header */}
                 <View style={styles.studentHeader}>
                   <View style={styles.studentInfo}>
-                    <Text style={styles.studentName}>{student.name}</Text>
-                    {student.english_name ? (
-                      <Text style={styles.studentEnglish}>({student.english_name})</Text>
+                    <Text style={styles.studentName}>{student.student_name}</Text>
+                    {student.english_first_name ? (
+                      <Text style={styles.studentEnglish}>({student.english_first_name})</Text>
                     ) : null}
                   </View>
                   {student.send_status === 'sent' && (

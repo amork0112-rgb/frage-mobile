@@ -21,8 +21,8 @@ type Class = {
 
 type Student = {
   id: string;
-  name: string;
-  english_name: string;
+  student_name: string;
+  english_first_name: string;
   campus: string;
 };
 
@@ -87,9 +87,9 @@ export default function Classes() {
     try {
       const { data } = await supabase
         .from('students')
-        .select('id, name, english_name, campus')
+        .select('id, student_name, english_first_name, campus')
         .eq('class_id', classId)
-        .order('name');
+        .order('student_name');
 
       if (data) {
         setStudents(data);
@@ -132,8 +132,8 @@ export default function Classes() {
     return (
       <View style={styles.studentItem}>
         <View>
-          <Text style={styles.studentName}>{item.name}</Text>
-          <Text style={styles.studentEnglishName}>{item.english_name}</Text>
+          <Text style={styles.studentName}>{item.student_name}</Text>
+          <Text style={styles.studentEnglishName}>{item.english_first_name}</Text>
         </View>
         <Text style={styles.campus}>{item.campus}</Text>
       </View>

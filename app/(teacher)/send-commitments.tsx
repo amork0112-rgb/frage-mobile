@@ -18,8 +18,8 @@ type Class = {
 
 type Student = {
   id: string;
-  name: string;
-  english_name: string;
+  student_name: string;
+  english_first_name: string;
 };
 
 export default function SendCommitments() {
@@ -78,9 +78,9 @@ export default function SendCommitments() {
     try {
       const { data } = await supabase
         .from('students')
-        .select('id, name, english_name')
+        .select('id, student_name, english_first_name')
         .eq('class_id', classId)
-        .order('name');
+        .order('student_name');
 
       if (data) {
         setStudents(data);
@@ -175,7 +175,7 @@ export default function SendCommitments() {
                       selectedStudent === student.id && styles.optionTextSelected,
                     ]}
                   >
-                    {student.english_name || student.name}
+                    {student.english_first_name || student.student_name}
                   </Text>
                 </TouchableOpacity>
               ))}

@@ -55,8 +55,9 @@ export default function ParentLayout() {
       />
       {/* Hide screens that exist as files but shouldn't show as tabs */}
       <Tabs.Screen name="profile" options={{ href: null }} />
-      <Tabs.Screen name="notices" options={{ href: null }} />
-      <Tabs.Screen name="commitments" options={{ href: null }} />
+      <Tabs.Screen name="notices" options={{ href: null, title: '공지사항' }} />
+      <Tabs.Screen name="commitments" options={{ href: null, title: '학습 현황' }} />
+      <Tabs.Screen name="request" options={{ href: null, title: '신청하기' }} />
       <Tabs.Screen name="child/[id]" options={{ href: null }} />
       <Tabs.Screen name="message/[id]" options={{ href: null }} />
     </Tabs>

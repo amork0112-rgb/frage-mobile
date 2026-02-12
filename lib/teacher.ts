@@ -63,9 +63,9 @@ export async function getTeacherStudents(userId: string) {
 
     const { data: students, error } = await supabase
       .from('students')
-      .select('id, name, english_name, campus')
+      .select('id, student_name, english_first_name, campus')
       .in('class_id', classIds)
-      .order('name');
+      .order('student_name');
 
     if (error) {
       console.error('Error fetching students:', error);
@@ -74,7 +74,7 @@ export async function getTeacherStudents(userId: string) {
 
     return (students || []).map((s) => ({
       id: s.id,
-      first_name: s.english_name || s.name || '',
+      first_name: s.english_first_name || s.student_name || '',
       last_name: '',
       grade: s.campus || 'N/A',
     }));
