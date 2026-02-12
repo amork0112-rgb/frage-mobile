@@ -69,16 +69,26 @@ export default function CoachScreen() {
 
       const { data: teacher } = await supabase
         .from('teachers')
-        .select('email')
+        .select('id, name')
         .eq('auth_user_id', user.id)
         .single();
 
       if (!teacher) return;
 
+      // Get class names via teacher_classes join table
+      const { data: tcData } = await supabase
+        .from('teacher_classes')
+        .select('class_name')
+        .eq('teacher_id', teacher.id);
+
+      if (!tcData || tcData.length === 0) return;
+
+      const classNames = tcData.map((tc: any) => tc.class_name);
+
       const { data: classData } = await supabase
         .from('classes')
         .select('id, name')
-        .eq('teacher_id', teacher.email)
+        .in('name', classNames)
         .order('name');
 
       if (classData && classData.length > 0) {

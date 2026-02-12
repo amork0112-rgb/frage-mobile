@@ -38,10 +38,10 @@ export default function TeacherHome() {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Get teacher name and email
+      // Get teacher record
       const { data: teacher } = await supabase
         .from('teachers')
-        .select('name, email')
+        .select('id, name')
         .eq('auth_user_id', user.id)
         .single();
 
@@ -51,12 +51,22 @@ export default function TeacherHome() {
 
       const today = new Date().toISOString().split('T')[0];
 
-      // Get teacher's classes
-      const { data: classData } = await supabase
-        .from('classes')
-        .select('id, name')
-        .eq('teacher_id', teacher.email)
-        .order('name');
+      // Get class names via teacher_classes join table
+      const { data: tcData } = await supabase
+        .from('teacher_classes')
+        .select('class_name')
+        .eq('teacher_id', teacher.id);
+
+      const classNames = (tcData || []).map((tc: any) => tc.class_name);
+
+      // Get class details
+      const { data: classData } = classNames.length > 0
+        ? await supabase
+            .from('classes')
+            .select('id, name')
+            .in('name', classNames)
+            .order('name')
+        : { data: [] as any[] };
 
       if (classData && classData.length > 0) {
         const statuses: ClassStatus[] = [];

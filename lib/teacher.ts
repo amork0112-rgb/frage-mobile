@@ -5,7 +5,7 @@ export async function getTeacherStats(userId: string) {
     // Get teacher info
     const { data: teacher } = await supabase
       .from('teachers')
-      .select('email')
+      .select('id, name')
       .eq('auth_user_id', userId)
       .single();
 
@@ -13,22 +13,31 @@ export async function getTeacherStats(userId: string) {
       return { total_students: 0, present_today: 0, absent_today: 0, unread_messages: 0 };
     }
 
-    // Get classes for this teacher
-    const { data: classes } = await supabase
-      .from('classes')
-      .select('id')
-      .eq('teacher_id', teacher.email);
+    // Get class names via teacher_classes
+    const { data: tcData } = await supabase
+      .from('teacher_classes')
+      .select('class_name')
+      .eq('teacher_id', teacher.id);
 
-    const classIds = (classes || []).map((c) => c.id);
+    const classNames = (tcData || []).map((tc: any) => tc.class_name);
 
-    // Count students across all classes
+    // Get class IDs
     let totalStudents = 0;
-    if (classIds.length > 0) {
-      const { count } = await supabase
-        .from('students')
-        .select('id', { count: 'exact', head: true })
-        .in('class_id', classIds);
-      totalStudents = count || 0;
+    if (classNames.length > 0) {
+      const { data: classData } = await supabase
+        .from('classes')
+        .select('id')
+        .in('name', classNames);
+
+      const classIds = (classData || []).map((c: any) => c.id);
+
+      if (classIds.length > 0) {
+        const { count } = await supabase
+          .from('students')
+          .select('id', { count: 'exact', head: true })
+          .in('main_class', classIds);
+        totalStudents = count || 0;
+      }
     }
 
     return {
@@ -47,24 +56,34 @@ export async function getTeacherStudents(userId: string) {
   try {
     const { data: teacher } = await supabase
       .from('teachers')
-      .select('email')
+      .select('id')
       .eq('auth_user_id', userId)
       .single();
 
     if (!teacher) return [];
 
-    const { data: classes } = await supabase
+    // Get class names via teacher_classes
+    const { data: tcData } = await supabase
+      .from('teacher_classes')
+      .select('class_name')
+      .eq('teacher_id', teacher.id);
+
+    const classNames = (tcData || []).map((tc: any) => tc.class_name);
+    if (classNames.length === 0) return [];
+
+    // Get class IDs
+    const { data: classData } = await supabase
       .from('classes')
       .select('id')
-      .eq('teacher_id', teacher.email);
+      .in('name', classNames);
 
-    const classIds = (classes || []).map((c) => c.id);
+    const classIds = (classData || []).map((c: any) => c.id);
     if (classIds.length === 0) return [];
 
     const { data: students, error } = await supabase
       .from('students')
       .select('id, student_name, english_first_name, campus')
-      .in('class_id', classIds)
+      .in('main_class', classIds)
       .order('student_name');
 
     if (error) {
@@ -72,7 +91,7 @@ export async function getTeacherStudents(userId: string) {
       return [];
     }
 
-    return (students || []).map((s) => ({
+    return (students || []).map((s: any) => ({
       id: s.id,
       first_name: s.english_first_name || s.student_name || '',
       last_name: '',
@@ -81,6 +100,27 @@ export async function getTeacherStudents(userId: string) {
   } catch (error) {
     console.error('Error fetching teacher students:', error);
     return [];
+  }
+}
+
+export async function markAttendance(
+  _userId: string,
+  date: string,
+  records: { student_id: string; status: 'present' | 'absent' }[]
+) {
+  const rows = records.map((r) => ({
+    student_id: r.student_id,
+    status: r.status,
+    date: date,
+  }));
+
+  const { error } = await supabase
+    .from('attendance')
+    .upsert(rows, { onConflict: 'student_id,date' });
+
+  if (error) {
+    console.error('Error marking attendance:', error);
+    throw error;
   }
 }
 
@@ -97,7 +137,7 @@ export async function getTeacherMessages(userId: string) {
     return [];
   }
 
-  return (notices || []).map((n) => ({
+  return (notices || []).map((n: any) => ({
     id: n.id,
     subject: n.title || '',
     body: n.content || '',
@@ -106,23 +146,4 @@ export async function getTeacherMessages(userId: string) {
     read: true,
     created_at: n.created_at,
   }));
-}
-
-export async function markAttendance(
-  userId: string,
-  date: string,
-  records: { student_id: string; status: 'present' | 'absent' }[]
-) {
-  const rows = records.map((r) => ({
-    student_id: r.student_id,
-    content: `Attendance: ${r.status}`,
-    date: date,
-  }));
-
-  const { error } = await supabase.from('commitments').insert(rows);
-
-  if (error) {
-    console.error('Error marking attendance:', error);
-    throw error;
-  }
 }
