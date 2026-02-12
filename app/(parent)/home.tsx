@@ -256,12 +256,12 @@ export default function ParentHome() {
 
           <TouchableOpacity
             style={styles.actionCard}
-            onPress={() => router.push('/(parent)/commitments')}
+            onPress={() => router.push('/(parent)/coaching-report')}
           >
             <View style={[styles.actionIcon, { backgroundColor: '#FAF5FF' }]}>
               <Ionicons name="book-outline" size={24} color="#8B5CF6" />
             </View>
-            <Text style={styles.actionLabel}>학습 현황</Text>
+            <Text style={styles.actionLabel}>코칭 리포트</Text>
           </TouchableOpacity>
 
           <TouchableOpacity

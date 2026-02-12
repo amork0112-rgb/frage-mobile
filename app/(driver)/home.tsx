@@ -74,12 +74,11 @@ export default function DriverHome() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('name, bus_id')
+        .select('name')
         .eq('id', user.id)
         .maybeSingle();
 
       if (profile?.name) setDriverName(profile.name);
-      if (profile?.bus_id) setBusId(profile.bus_id);
 
       // Load available time slots
       const { data: slots } = await supabase
