@@ -12,21 +12,18 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { getParentChildren, getRecentNotices, getParentRequests } from '../../lib/parent';
+import { getParentChildren, getParentRequests } from '../../lib/parent';
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+}
 
 type Child = {
   id: string;
   student_name: string;
   english_first_name: string;
   campus: string;
-  class_id: string;
-};
-
-type Notice = {
-  id: string;
-  title: string;
-  content: string;
-  created_at: string;
+  main_class: string;
 };
 
 type PortalRequest = {
@@ -38,14 +35,36 @@ type PortalRequest = {
   student_id: string;
 };
 
+type ClassMessage = {
+  id: string;
+  content: string;
+  created_at: string;
+  class_name: string;
+};
+
+type CoachingReport = {
+  id: string;
+  student_name: string;
+  date: string;
+  summary: string;
+};
+
+const FAB_ITEMS: { key: string; label: string; icon: string; color: string }[] = [
+  { key: 'absence', label: '결석 신청', icon: 'close-circle-outline', color: '#EF4444' },
+  { key: 'early_pickup', label: '조퇴 신청', icon: 'time-outline', color: '#F59E0B' },
+  { key: 'bus_change', label: '차량 변경', icon: 'bus-outline', color: '#0066CC' },
+];
+
 export default function ParentHome() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [children, setChildren] = useState<Child[]>([]);
-  const [notices, setNotices] = useState<Notice[]>([]);
   const [requests, setRequests] = useState<PortalRequest[]>([]);
+  const [morningMessages, setMorningMessages] = useState<ClassMessage[]>([]);
+  const [coachingReports, setCoachingReports] = useState<CoachingReport[]>([]);
   const [parentName, setParentName] = useState('');
+  const [fabOpen, setFabOpen] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -71,14 +90,59 @@ export default function ParentHome() {
       const childrenData = await getParentChildren(user.id);
       setChildren(childrenData);
 
-      // Load recent notices
-      const noticesData = await getRecentNotices(3);
-      setNotices(noticesData);
-
       // Load recent portal requests
       const studentIds = childrenData.map((c) => c.id);
       const requestsData = await getParentRequests(studentIds);
       setRequests(requestsData);
+
+      // Load today's morning messages for children's classes
+      const classIds = childrenData
+        .map((c) => c.main_class)
+        .filter(Boolean);
+
+      if (classIds.length > 0) {
+        const today = new Date().toISOString().split('T')[0];
+        const { data: msgs } = await supabase
+          .from('class_messages')
+          .select('id, content, created_at, class_id, classes(name)')
+          .in('class_id', classIds)
+          .gte('created_at', today)
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        setMorningMessages(
+          (msgs || []).map((m: any) => ({
+            id: m.id,
+            content: m.content || '',
+            created_at: m.created_at,
+            class_name: (m.classes as any)?.name || '',
+          }))
+        );
+      }
+
+      // Load recent coaching reports (daily_reports)
+      if (studentIds.length > 0) {
+        const { data: reports } = await supabase
+          .from('daily_reports')
+          .select('id, student_id, date, content')
+          .in('student_id', studentIds)
+          .order('date', { ascending: false })
+          .limit(5);
+
+        setCoachingReports(
+          (reports || []).map((r: any) => {
+            const child = childrenData.find((c) => c.id === r.student_id);
+            return {
+              id: r.id,
+              student_name: child
+                ? child.student_name || child.english_first_name || ''
+                : '',
+              date: r.date,
+              summary: r.content || '',
+            };
+          })
+        );
+      }
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -131,10 +195,6 @@ export default function ParentHome() {
     return `${m}/${day}`;
   }
 
-  function handleContact() {
-    Linking.openURL('http://pf.kakao.com/_TxdXxnG/chat');
-  }
-
   if (loading) {
     return (
       <View style={styles.centerContainer}>
@@ -145,21 +205,21 @@ export default function ParentHome() {
 
   const firstChild = children[0];
   const displayName = firstChild
-    ? getChildName(firstChild)
+    ? firstChild.student_name || firstChild.english_first_name || '학생'
     : parentName || '학부모';
 
   return (
+    <View style={styles.rootContainer}>
     <ScrollView
       style={styles.container}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
     >
-      {/* Welcome Header */}
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.greeting}>안녕하세요,</Text>
-        <Text style={styles.name}>
-          <Text style={styles.nameHighlight}>{displayName}</Text> 학부모님!
+        <Text style={styles.greeting}>
+          안녕하세요, <Text style={styles.nameHighlight}>{displayName}</Text> 학부모님!
         </Text>
         <Text style={styles.date}>
           {new Date().toLocaleDateString('ko-KR', {
@@ -170,38 +230,6 @@ export default function ParentHome() {
           })}
         </Text>
       </View>
-
-      {/* Children Cards */}
-      {children.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>내 자녀</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.childrenScroll}>
-            {children.map((child) => (
-              <TouchableOpacity
-                key={child.id}
-                style={styles.childChip}
-                onPress={() =>
-                  router.push({
-                    pathname: '/(parent)/child/[id]',
-                    params: { id: child.id },
-                  })
-                }
-              >
-                <View style={styles.childAvatar}>
-                  <Text style={styles.childAvatarText}>
-                    {getChildName(child)[0] || '?'}
-                  </Text>
-                </View>
-                <View>
-                  <Text style={styles.childChipName}>{getChildName(child)}</Text>
-                  <Text style={styles.childChipGrade}>{child.campus}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      )}
 
       {/* Quick Actions Grid */}
       <View style={styles.section}>
@@ -239,41 +267,75 @@ export default function ParentHome() {
 
           <TouchableOpacity
             style={styles.actionCard}
-            onPress={() => {
-              if (firstChild) {
-                router.push({
-                  pathname: '/(parent)/child/[id]',
-                  params: { id: firstChild.id },
-                });
-              }
-            }}
+            onPress={() => Linking.openURL('https://www.frage.co.kr/calendar')}
           >
             <View style={[styles.actionIcon, { backgroundColor: '#F0FDF4' }]}>
-              <Ionicons name="person-outline" size={24} color="#10B981" />
+              <Ionicons name="calendar" size={24} color="#10B981" />
             </View>
-            <Text style={styles.actionLabel}>학생 정보</Text>
+            <Text style={styles.actionLabel}>학사일정</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push('/(parent)/coaching-report')}
-          >
-            <View style={[styles.actionIcon, { backgroundColor: '#FAF5FF' }]}>
-              <Ionicons name="book-outline" size={24} color="#8B5CF6" />
-            </View>
-            <Text style={styles.actionLabel}>코칭 리포트</Text>
-          </TouchableOpacity>
+        </View>
+      </View>
 
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={handleContact}
-          >
-            <View style={[styles.actionIcon, { backgroundColor: '#FFFBEB' }]}>
-              <Ionicons name="chatbubble-ellipses-outline" size={24} color="#D97706" />
+      {/* Today's Morning Messages */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>오늘의 알림장</Text>
+        </View>
+        {morningMessages.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="notifications-outline" size={36} color="#CBD5E1" />
+            <Text style={styles.emptyText}>오늘은 새로운 알림이 없습니다</Text>
+          </View>
+        ) : (
+          morningMessages.map((msg) => (
+            <View key={msg.id} style={styles.messageCard}>
+              <View style={styles.messageHeader}>
+                <View style={styles.classBadge}>
+                  <Text style={styles.classBadgeText}>{msg.class_name}</Text>
+                </View>
+                <Text style={styles.messageTime}>
+                  {new Date(msg.created_at).toLocaleTimeString('ko-KR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              </View>
+              <Text style={styles.messageContent} numberOfLines={4}>
+                {stripHtml(msg.content)}
+              </Text>
             </View>
-            <Text style={styles.actionLabel}>상담/문의</Text>
+          ))
+        )}
+      </View>
+
+      {/* Coaching Reports */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>최근 코칭 리포트</Text>
+          <TouchableOpacity onPress={() => router.push('/(parent)/coaching-report')}>
+            <Text style={styles.viewAll}>전체보기</Text>
           </TouchableOpacity>
         </View>
+        {coachingReports.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="book-outline" size={36} color="#CBD5E1" />
+            <Text style={styles.emptyText}>코칭 리포트가 없습니다</Text>
+          </View>
+        ) : (
+          coachingReports.map((report) => (
+            <View key={report.id} style={styles.reportCard}>
+              <View style={styles.reportHeader}>
+                <Text style={styles.reportStudent}>{report.student_name}</Text>
+                <Text style={styles.reportDate}>{report.date}</Text>
+              </View>
+              <Text style={styles.reportSummary} numberOfLines={3}>
+                {stripHtml(report.summary)}
+              </Text>
+            </View>
+          ))
+        )}
       </View>
 
       {/* Recent Requests */}
@@ -327,61 +389,65 @@ export default function ParentHome() {
         </View>
       )}
 
-      {/* Recent Notices */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>공지사항</Text>
-          <TouchableOpacity onPress={() => router.push('/(parent)/notices')}>
-            <Text style={styles.viewAll}>전체보기</Text>
-          </TouchableOpacity>
-        </View>
 
-        {notices.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Ionicons name="megaphone-outline" size={36} color="#CBD5E1" />
-            <Text style={styles.emptyText}>공지사항이 없습니다</Text>
-          </View>
-        ) : (
-          notices.map((notice) => (
-            <TouchableOpacity
-              key={notice.id}
-              style={styles.noticeCard}
-              onPress={() =>
-                router.push({
-                  pathname: '/(parent)/message/[id]',
-                  params: { id: notice.id },
-                })
-              }
-            >
-              <View style={styles.noticeContent}>
-                <Text style={styles.noticeTitle} numberOfLines={1}>
-                  {notice.title}
-                </Text>
-                <Text style={styles.noticeBody} numberOfLines={2}>
-                  {notice.content}
-                </Text>
-              </View>
-              <Text style={styles.noticeDate}>{formatDate(notice.created_at)}</Text>
-            </TouchableOpacity>
-          ))
-        )}
-      </View>
-
-      {/* Contact Button */}
+      {/* Contact */}
       <View style={styles.section}>
-        <TouchableOpacity style={styles.contactButton} onPress={handleContact}>
+        <TouchableOpacity style={styles.contactButton} onPress={() => Linking.openURL('http://pf.kakao.com/_QGQvxj/chat')}>
           <Ionicons name="chatbubble-ellipses" size={20} color="#FFFFFF" />
           <Text style={styles.contactButtonText}>카카오톡 상담 문의</Text>
         </TouchableOpacity>
         <Text style={styles.contactInfo}>입학/수업 관련 문의: 053-754-0577</Text>
       </View>
 
-      <View style={{ height: 32 }} />
+      <View style={{ height: 80 }} />
     </ScrollView>
+
+    {/* FAB Overlay */}
+    {fabOpen && (
+      <TouchableOpacity
+        style={styles.fabOverlay}
+        activeOpacity={1}
+        onPress={() => setFabOpen(false)}
+      />
+    )}
+
+    {/* FAB Menu */}
+    {fabOpen && (
+      <View style={styles.fabMenu}>
+        {FAB_ITEMS.map((item) => (
+          <TouchableOpacity
+            key={item.key}
+            style={styles.fabMenuItem}
+            onPress={() => {
+              setFabOpen(false);
+              router.push('/(parent)/request');
+            }}
+          >
+            <Text style={styles.fabMenuLabel}>{item.label}</Text>
+            <View style={[styles.fabMenuIcon, { backgroundColor: item.color }]}>
+              <Ionicons name={item.icon as any} size={20} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
+    )}
+
+    {/* FAB Button */}
+    <TouchableOpacity
+      style={[styles.fab, fabOpen && styles.fabActive]}
+      onPress={() => setFabOpen(!fabOpen)}
+      activeOpacity={0.8}
+    >
+      <Ionicons name={fabOpen ? 'close' : 'add'} size={28} color="#FFFFFF" />
+    </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
@@ -401,22 +467,18 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E2E8F0',
   },
   greeting: {
-    fontSize: 16,
-    color: '#64748B',
-  },
-  name: {
-    fontSize: 24,
-    fontWeight: '800',
+    fontSize: 20,
+    fontWeight: '700',
     color: '#1E293B',
-    marginTop: 2,
   },
   nameHighlight: {
     color: '#0066CC',
+    fontWeight: '800',
   },
   date: {
     fontSize: 13,
     color: '#94A3B8',
-    marginTop: 8,
+    marginTop: 6,
   },
 
   // Sections
@@ -442,60 +504,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  // Children chips
-  childrenScroll: {
-    marginHorizontal: -4,
-  },
-  childChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginHorizontal: 4,
-    gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  childAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#0066CC',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  childAvatarText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  childChipName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  childChipGrade: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 1,
-  },
-
   // Action Grid
   actionGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 8,
   },
   actionCard: {
-    width: '30%',
+    width: '22.5%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 14,
+    padding: 12,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -504,9 +523,9 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   actionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
@@ -517,6 +536,80 @@ const styles = StyleSheet.create({
     color: '#334155',
     textAlign: 'center',
     lineHeight: 16,
+  },
+
+  // Morning Messages
+  messageCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  messageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  classBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  classBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0066CC',
+  },
+  messageTime: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  messageContent: {
+    fontSize: 14,
+    color: '#334155',
+    lineHeight: 20,
+  },
+
+  // Coaching Reports
+  reportCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#8B5CF6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  reportHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  reportStudent: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  reportDate: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  reportSummary: {
+    fontSize: 14,
+    color: '#475569',
+    lineHeight: 20,
   },
 
   // Requests
@@ -571,41 +664,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Notices
-  noticeCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  noticeContent: {
-    flex: 1,
-    marginRight: 12,
-  },
-  noticeTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  noticeBody: {
-    fontSize: 13,
-    color: '#64748B',
-    lineHeight: 18,
-  },
-  noticeDate: {
-    fontSize: 12,
-    color: '#94A3B8',
-  },
-
   // Empty state
   emptyCard: {
     backgroundColor: '#FFFFFF',
@@ -645,5 +703,74 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#94A3B8',
     marginTop: 12,
+  },
+
+  // FAB
+  fabOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#0066CC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#0066CC',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  fabActive: {
+    backgroundColor: '#64748B',
+    shadowColor: '#64748B',
+  },
+  fabMenu: {
+    position: 'absolute',
+    right: 20,
+    bottom: 92,
+    alignItems: 'flex-end',
+    gap: 10,
+  },
+  fabMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  fabMenuLabel: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  fabMenuIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
 });

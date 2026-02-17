@@ -4,7 +4,8 @@ import { Text } from 'react-native';
 function TabBarIcon({ name, focused }: { name: string; focused: boolean }) {
   const icons: Record<string, string> = {
     home: '🏠',
-    messages: '💬',
+    bus: '🚌',
+    video: '🎥',
     settings: '⚙️',
   };
 
@@ -42,8 +43,15 @@ export default function ParentLayout() {
       <Tabs.Screen
         name="messages"
         options={{
-          title: 'Messages',
-          tabBarIcon: ({ focused }) => <TabBarIcon name="messages" focused={focused} />,
+          title: '차량위치',
+          tabBarIcon: ({ focused }) => <TabBarIcon name="bus" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="video-homework"
+        options={{
+          title: 'Video HW',
+          tabBarIcon: ({ focused }) => <TabBarIcon name="video" focused={focused} />,
         }}
       />
       <Tabs.Screen
@@ -60,6 +68,8 @@ export default function ParentLayout() {
       <Tabs.Screen name="request" options={{ href: null, title: '신청하기' }} />
       <Tabs.Screen name="child/[id]" options={{ href: null }} />
       <Tabs.Screen name="message/[id]" options={{ href: null }} />
+      <Tabs.Screen name="video-homework/record" options={{ href: null, title: '영상 녹화' }} />
+      <Tabs.Screen name="video-homework/submission/[id]" options={{ href: null, title: '제출 내역' }} />
     </Tabs>
   );
 }
